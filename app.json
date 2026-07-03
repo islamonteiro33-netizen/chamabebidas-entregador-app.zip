@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "Chama Bebidas Entregador",
+    "slug": "chamabebidas-entregador",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#111111"
+    },
+    "android": {
+      "package": "com.chamabebidas.entregador",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./adaptive-icon.png",
+        "backgroundColor": "#111111"
+      },
+      "permissions": [
+        "INTERNET",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA"
+      ]
+    },
+    "plugins": [
+      "expo-location",
+      "expo-image-picker"
+    ]
+  }
+}

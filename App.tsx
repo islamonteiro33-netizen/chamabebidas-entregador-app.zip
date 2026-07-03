@@ -1,246 +1,48 @@
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Image, Linking, RefreshControl, SafeAreaView, ScrollView, StatusBar as RNStatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
-import * as Location from 'expo-location';
-import * as ImagePicker from 'expo-image-picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React,{useEffect,useMemo,useState}from'react';
+import{ActivityIndicator,Alert,FlatList,Image,Linking,Modal,RefreshControl,SafeAreaView,ScrollView,StatusBar as SB,StyleSheet,Text,TextInput,TouchableOpacity,View}from'react-native';
+import{StatusBar}from'expo-status-bar';
+import AsyncStorage from'@react-native-async-storage/async-storage';
+import*as Location from'expo-location';
+import*as ImagePicker from'expo-image-picker';
 
-const API_URL = 'https://chamabebidas.com.br/api';
+const API='https://chamabebidas.com.br/api';
+const Y='#FFD000',BG='#08080A',P='#17171B',P2='#222228',T='#FFF',M='#AAA',R='#FF4040',G='#19B65A';
+type O={id:any,status:string,storeName?:string,store_name?:string,storeAddress?:string,store_address?:string,customerName?:string,customer_name?:string,customerPhone?:string,customer_phone?:string,phone?:string,address?:string,delivery_address?:string,total?:number,total_amount?:number,deliveryFee?:number,delivery_fee?:number,pickupCode?:string,pickup_code?:string,deliveryCode?:string,delivery_code?:string};
+const DEMO:O[]=[{id:'DEMO_1',status:'calling_driver',storeName:'Adega Islamonteiro33',storeAddress:'Rua 11 de Agosto, 360 - Centro, Tatuí - SP',customerName:'Cliente',customerPhone:'15999999999',address:'Já o Abram, 222 - Jardim Rosa Garcia, Tatuí - SP',total:9.5,deliveryFee:7,pickupCode:'7382',deliveryCode:'7382'}];
 
-type Order = {
-  id: number;
-  status: string;
-  storeName?: string;
-  store_name?: string;
-  storeAddress?: string;
-  store_address?: string;
-  customerName?: string;
-  customer_name?: string;
-  customerPhone?: string;
-  customer_phone?: string;
-  phone?: string;
-  address?: string;
-  delivery_address?: string;
-  total?: number;
-  total_amount?: number;
-  deliveryFee?: number;
-  delivery_fee?: number;
-  pickupCode?: string;
-  pickup_code?: string;
-  deliveryCode?: string;
-  delivery_code?: string;
-};
-
-const DEMO: Order[] = [
-  { id: 2001, status: 'calling_driver', storeName: 'Adega Didi', storeAddress: 'Centro - Tatuí', customerName: 'Cliente Teste', customerPhone: '15999999999', address: 'Rua Exemplo, 123 - Tatuí', total: 87.9, deliveryFee: 8, pickupCode: '12345', deliveryCode: '54321' },
-  { id: 2002, status: 'ready', storeName: 'Adega Central', storeAddress: 'Rua 11 de Agosto - Tatuí', customerName: 'Pedido Demonstração', customerPhone: '15988888888', address: 'Jardim Santa Rita - Tatuí', total: 129.8, deliveryFee: 10, pickupCode: '99887', deliveryCode: '77889' }
-];
-
-export default function App() {
-  const [screen, setScreen] = useState<'login' | 'orders' | 'active' | 'settings'>('login');
-  const [driverId, setDriverId] = useState('');
-  const [driverName, setDriverName] = useState('');
-  const [password, setPassword] = useState('');
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [activeOrder, setActiveOrder] = useState<Order | null>(null);
-  const [usingDemo, setUsingDemo] = useState(false);
-  const [apiOnline, setApiOnline] = useState<boolean | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [actionLoading, setActionLoading] = useState<number | null>(null);
-  const [proofImage, setProofImage] = useState<string | null>(null);
-  const [deliveryCodeInput, setDeliveryCodeInput] = useState('');
-
-  const totals = useMemo(() => ({
-    available: orders.length,
-    fee: orders.reduce((s, o) => s + fee(o), 0)
-  }), [orders]);
-
-  useEffect(() => { boot(); }, []);
-  useEffect(() => {
-    if (screen === 'orders') {
-      loadOrders();
-      const timer = setInterval(loadOrders, 15000);
-      return () => clearInterval(timer);
-    }
-  }, [screen]);
-
-  async function boot() {
-    try {
-      const r = await fetch(API_URL.replace('/api', '/'));
-      setApiOnline(r.ok);
-    } catch {
-      setApiOnline(false);
-    }
-    const id = await AsyncStorage.getItem('driverId');
-    const name = await AsyncStorage.getItem('driverName');
-    if (id) {
-      setDriverId(id);
-      setDriverName(name || `Entregador #${id}`);
-      setScreen('orders');
-    }
-  }
-
-  async function login() {
-    if (!driverId.trim()) return Alert.alert('Atenção', 'Digite o ID ou telefone do entregador.');
-    setLoading(true);
-    try {
-      const name = driverName.trim() || `Entregador #${driverId.trim()}`;
-      try {
-        await fetch(`${API_URL}/drivers/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ driverId, phone: driverId, password }) });
-      } catch {}
-      await AsyncStorage.setItem('driverId', driverId.trim());
-      await AsyncStorage.setItem('driverName', name);
-      setDriverName(name);
-      setScreen('orders');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function logout() {
-    await AsyncStorage.removeItem('driverId');
-    await AsyncStorage.removeItem('driverName');
-    setDriverId(''); setDriverName(''); setPassword(''); setOrders([]); setActiveOrder(null); setScreen('login');
-  }
-
-  async function loadOrders() {
-    setLoading(true);
-    try {
-      const urls = [`${API_URL}/orders/available`, `${API_URL}/deliveries/available`, `${API_URL}/orders?status=ready`, `${API_URL}/orders`];
-      let list: Order[] | null = null;
-      for (const url of urls) {
-        try {
-          const r = await fetch(url);
-          if (!r.ok) continue;
-          const d = await r.json();
-          const arr = Array.isArray(d) ? d : d.orders || d.deliveries || d.data;
-          if (Array.isArray(arr)) { list = arr; break; }
-        } catch {}
-      }
-      if (list) {
-        setOrders(list.filter(o => ['ready', 'calling_driver', 'driver_available', 'pending'].includes(o.status)));
-        setUsingDemo(false);
-      } else {
-        setOrders(DEMO); setUsingDemo(true);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function updateStatus(order: Order, status: string) {
-    if (usingDemo) {
-      const updated = { ...order, status };
-      setOrders(p => p.map(o => o.id === order.id ? updated : o));
-      setActiveOrder(updated);
-      return true;
-    }
-    setActionLoading(order.id);
-    try {
-      const r = await fetch(`${API_URL}/orders/${order.id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status, driverId, driverName }) });
-      if (!r.ok) throw new Error('erro');
-      await loadOrders();
-      return true;
-    } catch {
-      Alert.alert('Erro', 'Não foi possível atualizar o pedido.');
-      return false;
-    } finally {
-      setActionLoading(null);
-    }
-  }
-
-  async function accept(order: Order) {
-    const ok = await updateStatus(order, 'driver_accepted');
-    if (ok) { setActiveOrder({ ...order, status: 'driver_accepted' }); setScreen('active'); }
-  }
-
-  async function sendLocation(order: Order) {
-    const perm = await Location.requestForegroundPermissionsAsync();
-    if (perm.status !== 'granted') return Alert.alert('Localização', 'Permissão negada.');
-    const pos = await Location.getCurrentPositionAsync({});
-    if (!usingDemo) {
-      await fetch(`${API_URL}/orders/${order.id}/location`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ driverId, latitude: pos.coords.latitude, longitude: pos.coords.longitude }) }).catch(() => {});
-    }
-    Alert.alert('Localização enviada', 'Sua posição foi atualizada.');
-  }
-
-  async function takePhoto() {
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) return Alert.alert('Câmera', 'Permissão negada.');
-    const r = await ImagePicker.launchCameraAsync({ quality: 0.6 });
-    if (!r.canceled && r.assets?.[0]?.uri) setProofImage(r.assets[0].uri);
-  }
-
-  async function finish(order: Order) {
-    const code = deliveryCode(order);
-    if (code && deliveryCodeInput.trim() && deliveryCodeInput.trim() !== code) return Alert.alert('Código incorreto', 'Confira o código do cliente.');
-    if (!proofImage) return Alert.alert('Foto obrigatória', 'Tire uma foto da entrega.');
-    await updateStatus(order, 'delivered');
-    setProofImage(null); setDeliveryCodeInput(''); setActiveOrder(null); setScreen('orders');
-    Alert.alert('Entrega finalizada', 'Pedido entregue.');
-  }
-
-  function store(o: Order) { return o.storeName || o.store_name || 'Adega não informada'; }
-  function storeAddr(o: Order) { return o.storeAddress || o.store_address || 'Endereço da adega não informado'; }
-  function customer(o: Order) { return o.customerName || o.customer_name || 'Cliente não informado'; }
-  function phone(o: Order) { return o.customerPhone || o.customer_phone || o.phone || ''; }
-  function addr(o: Order) { return o.address || o.delivery_address || 'Endereço do cliente não informado'; }
-  function total(o: Order) { return Number(o.total ?? o.total_amount ?? 0); }
-  function fee(o: Order) { return Number(o.deliveryFee ?? o.delivery_fee ?? 0); }
-  function pickupCode(o: Order) { return o.pickupCode || o.pickup_code || ''; }
-  function deliveryCode(o: Order) { return o.deliveryCode || o.delivery_code || ''; }
-  function maps(a: string) { Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a)}`); }
-  function zap(p: string) { if (!p) return Alert.alert('Telefone não informado'); const c = p.replace(/\D/g, ''); Linking.openURL(`https://wa.me/${c.startsWith('55') ? c : '55' + c}`); }
-
-  function renderOrder({ item }: { item: Order }) {
-    return <View style={styles.card}>
-      <View style={styles.row}><View><Text style={styles.orderTitle}>Pedido #{item.id}</Text><Text style={styles.small}>{item.status}</Text></View><View style={styles.fee}><Text style={styles.feeText}>R$ {fee(item).toFixed(2)}</Text></View></View>
-      <View style={styles.divider} />
-      <Info label="Retirada" value={store(item)} /><Info label="Endereço da adega" value={storeAddr(item)} /><Info label="Cliente" value={customer(item)} /><Info label="Entrega" value={addr(item)} />
-      <Text style={styles.total}>Pedido: R$ {total(item).toFixed(2)}</Text>
-      <View style={styles.actions}><Secondary title="Rota até adega" onPress={() => maps(storeAddr(item))} /><Secondary title="Rota até cliente" onPress={() => maps(addr(item))} /><Button title="Aceitar entrega" green loading={actionLoading === item.id} onPress={() => accept(item)} /></View>
-    </View>;
-  }
-
-  if (screen === 'login') return <SafeAreaView style={styles.login}><StatusBar style="light" /><RNStatusBar barStyle="light-content" backgroundColor="#111" /><ScrollView contentContainerStyle={styles.loginContent}>
-    <View style={styles.circle}><Text style={styles.circleText}>🏍️</Text></View><Text style={styles.logo}>Chama Bebidas</Text><Text style={styles.subtitle}>App do Entregador</Text>
-    <View style={styles.api}><Text style={styles.apiText}>API: {apiOnline === null ? 'verificando...' : apiOnline ? 'online' : 'não confirmada'}</Text></View>
-    <TextInput style={styles.input} placeholder="ID ou telefone" placeholderTextColor="#777" value={driverId} onChangeText={setDriverId} keyboardType="phone-pad" />
-    <TextInput style={styles.input} placeholder="Nome do entregador" placeholderTextColor="#777" value={driverName} onChangeText={setDriverName} />
-    <TextInput style={styles.input} placeholder="Senha" placeholderTextColor="#777" value={password} onChangeText={setPassword} secureTextEntry />
-    <TouchableOpacity style={styles.loginButton} onPress={login}>{loading ? <ActivityIndicator color="#111" /> : <Text style={styles.loginText}>Entrar</Text>}</TouchableOpacity>
-    <Text style={styles.hint}>Se a API ainda não tiver rotas do entregador, o app abre com pedidos de demonstração.</Text>
-  </ScrollView></SafeAreaView>;
-
-  if (screen === 'settings') return <SafeAreaView style={styles.light}><Header title="Configurações" subtitle={driverName || driverId} rightText="Voltar" onRight={() => setScreen('orders')} /><View style={styles.card}><Info label="API" value={API_URL} /><Info label="Entregador" value={driverName || driverId} /><Info label="Demonstração" value={usingDemo ? 'Sim' : 'Não'} /><Button title="Sair da conta" red onPress={logout} /></View></SafeAreaView>;
-
-  if (screen === 'active' && activeOrder) return <SafeAreaView style={styles.light}><Header title="Entrega ativa" subtitle={`Pedido #${activeOrder.id}`} rightText="Lista" onRight={() => setScreen('orders')} /><ScrollView contentContainerStyle={{ padding: 16 }}>
-    <View style={styles.card}><Text style={styles.orderTitle}>Retirada</Text><Info label="Adega" value={store(activeOrder)} /><Info label="Endereço" value={storeAddr(activeOrder)} /><Info label="Código retirada" value={pickupCode(activeOrder) || 'Não informado'} /><View style={styles.actions}><Secondary title="Abrir rota até adega" onPress={() => maps(storeAddr(activeOrder))} /><Button title="Confirmar retirada" onPress={() => updateStatus(activeOrder, 'picked_up')} /></View></View>
-    <View style={styles.card}><Text style={styles.orderTitle}>Entrega</Text><Info label="Cliente" value={customer(activeOrder)} /><Info label="Telefone" value={phone(activeOrder) || 'Não informado'} /><Info label="Endereço" value={addr(activeOrder)} /><Info label="Código cliente" value={deliveryCode(activeOrder) || 'Não informado'} /><TextInput style={styles.inputLight} placeholder="Digite o código do cliente" placeholderTextColor="#777" value={deliveryCodeInput} onChangeText={setDeliveryCodeInput} keyboardType="numeric" />{proofImage && <Image source={{ uri: proofImage }} style={styles.photo} />}<View style={styles.actions}><Secondary title="WhatsApp do cliente" onPress={() => zap(phone(activeOrder))} /><Secondary title="Abrir rota até cliente" onPress={() => maps(addr(activeOrder))} /><Button title="Enviar localização" onPress={() => sendLocation(activeOrder)} /><Button title="Tirar foto da entrega" onPress={takePhoto} /><Button title="Finalizar entrega" green onPress={() => finish(activeOrder)} /></View></View>
-  </ScrollView></SafeAreaView>;
-
-  return <SafeAreaView style={styles.light}><Header title="Chama Entregador" subtitle={driverName || driverId} rightText="Config" onRight={() => setScreen('settings')} />{usingDemo && <View style={styles.warn}><Text style={styles.warnText}>Mostrando entregas de exemplo.</Text></View>}<View style={styles.stats}><Stat title="Disponíveis" value={String(totals.available)} /><Stat title="Ganhos" value={`R$ ${totals.fee.toFixed(2)}`} /></View>{activeOrder && <TouchableOpacity style={styles.active} onPress={() => setScreen('active')}><Text style={styles.activeText}>Continuar entrega #{activeOrder.id}</Text></TouchableOpacity>}<FlatList data={orders} keyExtractor={i => String(i.id)} renderItem={renderOrder} contentContainerStyle={{ padding: 16, paddingBottom: 40 }} refreshControl={<RefreshControl refreshing={loading} onRefresh={loadOrders} />} ListEmptyComponent={<View style={styles.empty}>{loading ? <ActivityIndicator /> : <Text>Nenhuma entrega disponível.</Text>}</View>} /></SafeAreaView>;
+export default function App(){
+const[screen,setScreen]=useState<'login'|'home'|'ride'|'earn'|'wallet'>('login'),[drawer,setDrawer]=useState(false),[id,setId]=useState(''),[name,setName]=useState(''),[pass,setPass]=useState(''),[orders,setOrders]=useState<O[]>([]),[active,setActive]=useState<O|null>(null),[online,setOnline]=useState(false),[demo,setDemo]=useState(false),[loading,setLoading]=useState(false),[busy,setBusy]=useState<any>(null),[api,setApi]=useState<boolean|null>(null),[photo,setPhoto]=useState<string|null>(null),[code,setCode]=useState('');
+const sum=useMemo(()=>orders.reduce((s,o)=>s+fee(o),0),[orders]);
+useEffect(()=>{boot()},[]);
+useEffect(()=>{if(screen==='home'&&online){load();const t=setInterval(load,15000);return()=>clearInterval(t)}},[screen,online]);
+async function boot(){try{let r=await fetch(API.replace('/api','/'));setApi(r.ok)}catch{setApi(false)}let a=await AsyncStorage.getItem('driverId'),b=await AsyncStorage.getItem('driverName');if(a){setId(a);setName(b||'Michel');setScreen('home')}}
+async function login(){if(!id.trim())return Alert.alert('Digite telefone ou CPF');setLoading(true);try{let n=name.trim()||'Michel';await AsyncStorage.setItem('driverId',id.trim());await AsyncStorage.setItem('driverName',n);setName(n);setScreen('home')}finally{setLoading(false)}}
+async function logout(){await AsyncStorage.clear();setScreen('login');setDrawer(false);setOnline(false);setOrders([])}
+async function load(){setLoading(true);try{let got:null|O[]=null;for(const u of[`${API}/orders/available`,`${API}/deliveries/available`,`${API}/orders?status=ready`,`${API}/orders`]){try{let r=await fetch(u);if(!r.ok)continue;let d=await r.json(),a=Array.isArray(d)?d:d.orders||d.deliveries||d.data;if(Array.isArray(a)){got=a;break}}catch{}}if(got){setOrders(got.filter(o=>['ready','calling_driver','driver_available','pending'].includes(o.status)).slice(0,8));setDemo(false)}else{setOrders(DEMO);setDemo(true)}}finally{setLoading(false)}}
+async function goOnline(){setOnline(true);await load()}
+async function upd(o:O,status:string){if(demo){let u={...o,status};setActive(u);setOrders(p=>p.map(x=>x.id===o.id?u:x));return true}setBusy(o.id);try{let r=await fetch(`${API}/orders/${o.id}/status`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status,driverId:id,driverName:name})});if(!r.ok)throw 0;await load();return true}catch{Alert.alert('Erro','Não foi possível atualizar.');return false}finally{setBusy(null)}}
+async function accept(o:O){if(await upd(o,'driver_accepted')){setActive({...o,status:'driver_accepted'});setScreen('ride')}}
+async function loc(o:O){let p=await Location.requestForegroundPermissionsAsync();if(p.status!=='granted')return Alert.alert('Permissão negada');let pos=await Location.getCurrentPositionAsync({});if(!demo)fetch(`${API}/orders/${o.id}/location`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({driverId:id,latitude:pos.coords.latitude,longitude:pos.coords.longitude})}).catch(()=>{});Alert.alert('Localização enviada')}
+async function cam(){let p=await ImagePicker.requestCameraPermissionsAsync();if(!p.granted)return Alert.alert('Permissão negada');let r=await ImagePicker.launchCameraAsync({quality:.6});if(!r.canceled)setPhoto(r.assets[0].uri)}
+async function finish(o:O){if(dcode(o)&&code&&code!==dcode(o))return Alert.alert('Código incorreto');if(!photo)return Alert.alert('Tire foto da entrega');await upd(o,'delivered');setPhoto(null);setCode('');setActive(null);setScreen('home');Alert.alert('Entrega concluída!')}
+function store(o:O){return o.storeName||o.store_name||'Adega não informada'}function saddr(o:O){return o.storeAddress||o.store_address||'Endereço da adega não informado'}function cust(o:O){return o.customerName||o.customer_name||'Cliente'}function phone(o:O){return o.customerPhone||o.customer_phone||o.phone||''}function addr(o:O){return o.address||o.delivery_address||'Endereço não informado'}function total(o:O){return Number(o.total??o.total_amount??0)}function fee(o:O){return Number(o.deliveryFee??o.delivery_fee??0)}function pcode(o:O){return o.pickupCode||o.pickup_code||'7382'}function dcode(o:O){return o.deliveryCode||o.delivery_code||'7382'}function maps(a:string){Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a)}`)}function zap(p:string){let c=p.replace(/\D/g,'');if(c)Linking.openURL(`https://wa.me/${c.startsWith('55')?c:'55'+c}`)}
+function OrderCard({item}:{item:O}){return <View style={st.card}><View style={st.cardTop}><Text style={st.cardTitle}>Nova corrida</Text><Text style={st.close}>×</Text></View><View style={st.route}><Text style={st.pin}>📍</Text><View style={{flex:1}}><View style={st.row}><Text style={st.place}>{store(item)}</Text><Text style={st.dist}>3,2 km</Text></View><Text style={st.sub}>{saddr(item)}</Text><View style={{height:25}}/><View style={st.row}><Text style={st.place}>{cust(item)}</Text><Text style={st.dist}>5,4 km</Text></View><Text style={st.sub}>{addr(item)}</Text></View></View><View style={st.box}><Text style={st.place}>🧃 Produtos</Text><Text style={st.sub}>2 itens • Bebidas</Text></View><View style={st.price}><Text style={st.green}>● Pagamento online</Text><View><Text style={st.big}>R$ {Math.max(total(item),fee(item)).toFixed(2)}</Text><Text style={st.sub}>Total da corrida</Text></View></View><Text style={st.tip}>Ao aceitar, você terá 5 minutos para chegar na adega.</Text><View style={st.actionsRow}><TouchableOpacity style={st.reject}><Text style={st.white}>RECUSAR</Text></TouchableOpacity><TouchableOpacity style={st.accept} onPress={()=>accept(item)}>{busy===item.id?<ActivityIndicator color="#111"/>:<><Text style={st.acceptText}>ACEITAR</Text><View style={st.circle}><Text style={st.circleText}>15</Text></View></>}</TouchableOpacity></View></View>}
+if(screen==='login')return <SafeAreaView style={st.login}><StatusBar style="light"/><SB barStyle="light-content" backgroundColor={BG}/><ScrollView contentContainerStyle={st.loginContent}><View style={st.logo}><Text style={{fontSize:42}}>🏍️</Text></View><Text style={st.title}>Chama Entregador</Text><Text style={st.subtitle}>App do Entregador</Text><TextInput style={st.input} placeholder="Telefone ou CPF" placeholderTextColor={M} value={id} onChangeText={setId}/><TextInput style={st.input} placeholder="Nome do entregador" placeholderTextColor={M} value={name} onChangeText={setName}/><TextInput style={st.input} placeholder="Senha" placeholderTextColor={M} value={pass} onChangeText={setPass} secureTextEntry/><TouchableOpacity style={{alignSelf:'flex-end'}}><Text style={st.yellow}>Esqueci minha senha</Text></TouchableOpacity><TouchableOpacity style={st.btn} onPress={login}>{loading?<ActivityIndicator color="#111"/>:<Text style={st.btnText}>ENTRAR</Text>}</TouchableOpacity><Text style={st.or}>ou</Text><TouchableOpacity style={st.outline}><Text style={st.white}>CRIAR CONTA</Text></TouchableOpacity><Text style={st.terms}>Ao entrar, você concorda com os <Text style={st.yellow}>Termos de uso</Text> e <Text style={st.yellow}>Política de privacidade</Text></Text><Text style={st.api}>API: {api===null?'verificando...':api?'online':'não confirmada'}</Text></ScrollView></SafeAreaView>;
+if(screen==='ride'&&active)return <SafeAreaView style={st.app}><Top title="Em andamento" onMenu={()=>setDrawer(true)}/><View style={st.steps}><Step t="Retirada" a/><Step t="Entrega" a={active.status==='picked_up'||active.status==='delivered'}/><Step t="Finalizar" a={active.status==='delivered'}/></View><Map/><View style={st.sheet}><Text style={st.sub}>{active.status==='picked_up'?'Entregar para':'Vá até a adega'}</Text><Text style={st.sheetTitle}>{active.status==='picked_up'?cust(active):store(active)}</Text><Text style={st.sub}>{active.status==='picked_up'?addr(active):saddr(active)}</Text>{active.status!=='picked_up'?<><TouchableOpacity style={st.btn} onPress={()=>upd(active,'picked_up')}><Text style={st.btnText}>CHEGUEI NA ADEGA</Text></TouchableOpacity><TouchableOpacity style={st.dark}><Text style={st.white}>CÓDIGO DE RETIRADA: {pcode(active)}</Text></TouchableOpacity></>:<><Text style={st.codeTitle}>Código do cliente</Text><View style={st.codeBox}>{dcode(active).slice(0,4).split('').map((n,i)=><Text key={i} style={st.num}>{n}</Text>)}</View><TextInput style={st.input} placeholder="Digite o código" placeholderTextColor={M} value={code} onChangeText={setCode}/>{photo&&<Image source={{uri:photo}} style={st.photo}/>}<TouchableOpacity style={st.btn} onPress={()=>finish(active)}><Text style={st.btnText}>ENTREGUEI AO CLIENTE</Text></TouchableOpacity><TouchableOpacity style={st.dark} onPress={cam}><Text style={st.white}>FOTO DA ENTREGA</Text></TouchableOpacity><TouchableOpacity style={st.dark} onPress={()=>zap(phone(active))}><Text style={st.white}>CHAMAR CLIENTE</Text></TouchableOpacity></>}<TouchableOpacity style={st.dark} onPress={()=>maps(active.status==='picked_up'?addr(active):saddr(active))}><Text style={st.white}>NAVEGAR</Text></TouchableOpacity><TouchableOpacity style={st.dark} onPress={()=>loc(active)}><Text style={st.white}>ENVIAR LOCALIZAÇÃO</Text></TouchableOpacity></View><Drawer visible={drawer} close={()=>setDrawer(false)} name={name} logout={logout} setScreen={setScreen}/></SafeAreaView>;
+if(screen==='earn')return <SafeAreaView style={st.app}><Top title="Ganhos" onMenu={()=>setScreen('home')} back/><ScrollView style={{padding:16}}><Text style={st.center}>Hoje</Text><Text style={st.earn}>R$ {sum.toFixed(2)}</Text><Text style={st.center}>Ganhos do dia</Text><Panel title="Resumo"><Line l="Valor líquido" v={`R$ ${sum.toFixed(2)}`}/><Line l="Taxa da plataforma" v="-R$ 0,00" red/><TouchableOpacity style={st.btn}><Text style={st.btnText}>SACAR</Text></TouchableOpacity></Panel></ScrollView><Nav screen={screen} setScreen={setScreen}/></SafeAreaView>;
+if(screen==='wallet')return <SafeAreaView style={st.app}><Top title="Carteira" onMenu={()=>setScreen('home')} back/><ScrollView style={{padding:16}}><Panel title="Saldo disponível"><Text style={st.earn}>R$ {sum.toFixed(2)}</Text><Text style={st.yellow}>Ver extrato ›</Text></Panel><Panel title="Outros serviços"><Line l="Histórico de repasses" v="›"/><Line l="Dados bancários" v="›"/></Panel></ScrollView><Nav screen={screen} setScreen={setScreen}/></SafeAreaView>;
+return <SafeAreaView style={st.app}><View style={st.homeTop}><TouchableOpacity style={st.menu} onPress={()=>setDrawer(true)}><Text style={st.menuT}>☰</Text><View style={st.redDot}/></TouchableOpacity><TouchableOpacity style={st.pill} onPress={()=>setScreen('earn')}><Text style={st.pillT}>R$ {sum.toFixed(2)}⌄</Text></TouchableOpacity><Text style={{fontSize:25}}>🔔</Text></View><Map/>{online?<View style={st.panelFloat}><View style={st.row}><Text style={st.panelTitle}>Painel</Text><Text style={st.sub}>Mais ›</Text></View><View style={st.grid}><Stat v={`R$ ${sum.toFixed(2)}`} l="Ganhos hoje"/><Stat v={String(orders.length)} l="Corridas hoje"/><Stat v={`R$ ${sum.toFixed(2)}`} l="Saldo"/><Stat v="0" l="Pontos"/></View>{demo&&<Text style={st.yellow}>Mostrando corridas de exemplo</Text>}</View>:<View style={st.online}><Text style={st.sheetTitle}>Fique online</Text><Text style={st.sub}>Conecte-se para receber corridas</Text><TouchableOpacity style={st.btn} onPress={goOnline}><Text style={st.btnText}>FICAR ONLINE</Text></TouchableOpacity></View>}{online&&<FlatList data={orders} keyExtractor={x=>String(x.id)} renderItem={OrderCard} contentContainerStyle={st.list} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={Y}/>}/>}<Nav screen={screen} setScreen={setScreen}/><Drawer visible={drawer} close={()=>setDrawer(false)} name={name} logout={logout} setScreen={setScreen}/></SafeAreaView>
 }
+function Map(){return <View style={st.map}><View style={[st.heat,{top:80,left:20}]}/><View style={[st.heat,{top:180,right:20}]}/><View style={[st.heat,{top:330,left:70}]}/><Text style={[st.mapText,{top:130,left:110}]}>CENTRO</Text><View style={[st.marker,{top:150,left:60}]}><Text>👥</Text></View><View style={[st.marker,{top:220,right:90}]}><Text>👥</Text></View><View style={[st.marker,{top:380,left:140}]}><Text>👥</Text></View><View style={st.me}><Text style={{color:T}}>●</Text></View></View>}
+function Top(p:any){return <View style={st.top}><TouchableOpacity onPress={p.onMenu}><Text style={st.topI}>{p.back?'‹':'☰'}</Text></TouchableOpacity><Text style={st.topT}>{p.title}</Text><Text style={st.topI}>☎</Text></View>}
+function Step({t,a}:any){return <View style={st.step}><View style={[st.stepDot,a&&{backgroundColor:Y}]}><Text>{a?'✓':'○'}</Text></View><Text style={[st.stepText,a&&{color:Y}]}>{t}</Text></View>}
+function Drawer({visible,close,name,logout,setScreen}:any){return <Modal transparent visible={visible} animationType="fade"><TouchableOpacity style={st.backdrop} onPress={close}><View style={st.drawer}><View style={st.profile}><View style={st.avatar}><Text style={st.btnText}>M</Text></View><View><Text style={st.drawerName}>{name||'Michel'}</Text><Text style={st.white}>★ 4,99 ★</Text><Text style={st.level}>💎 Diamante</Text></View></View>{[['📊','Painel','home'],['💰','Ganhos','earn'],['👛','Carteira','wallet'],['📄','Extrato',''],['🎁','Indique e ganhe',''],['❔','Central de ajuda',''],['🔔','Notificações',''],['🏍️','Veículo',''],['⚙️','Configurações','']].map((x,i)=><TouchableOpacity key={i} style={st.drawerItem} onPress={()=>{if(x[2]){close();setScreen(x[2])}}}><Text style={st.drawerIcon}>{x[0]}</Text><Text style={st.drawerText}>{x[1]}</Text></TouchableOpacity>)}<TouchableOpacity onPress={logout}><Text style={st.logout}>Sair da conta</Text></TouchableOpacity></View></TouchableOpacity></Modal>}
+function Nav({screen,setScreen}:any){return <View style={st.nav}><TouchableOpacity onPress={()=>setScreen('home')}><Text style={screen==='home'?st.navA:st.navT}>🏠{'\n'}Início</Text></TouchableOpacity><Text style={st.navT}>🏍️{'\n'}Corridas</Text><TouchableOpacity onPress={()=>setScreen('wallet')}><Text style={screen==='wallet'?st.navA:st.navT}>👛{'\n'}Carteira</Text></TouchableOpacity><Text style={st.navT}>👤{'\n'}Perfil</Text></View>}
+function Stat({v,l}:any){return <View style={st.stat}><Text style={st.statV}>{v}</Text><Text style={st.sub}>{l}</Text></View>}
+function Panel({title,children}:any){return <View style={st.panel}><Text style={st.panelTitle}>{title}</Text>{children}</View>}
+function Line({l,v,red}:any){return <View style={st.line}><Text style={st.sub}>{l}</Text><Text style={[st.white,red&&{color:R}]}>{v}</Text></View>}
 
-function Header({ title, subtitle, rightText, onRight }: any) { return <View style={styles.header}><View><Text style={styles.headerTitle}>{title}</Text><Text style={styles.headerSub}>{subtitle}</Text></View><TouchableOpacity style={styles.headerButton} onPress={onRight}><Text style={styles.headerButtonText}>{rightText}</Text></TouchableOpacity></View>; }
-function Info({ label, value }: any) { return <View style={{ marginTop: 10 }}><Text style={styles.label}>{label}</Text><Text style={styles.text}>{value}</Text></View>; }
-function Stat({ title, value }: any) { return <View style={styles.stat}><Text style={styles.statValue}>{value}</Text><Text style={styles.statTitle}>{title}</Text></View>; }
-function Button({ title, onPress, green, red, loading }: any) { return <TouchableOpacity style={[styles.button, green && styles.green, red && styles.red]} onPress={onPress} disabled={loading}>{loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{title}</Text>}</TouchableOpacity>; }
-function Secondary({ title, onPress }: any) { return <TouchableOpacity style={styles.secondary} onPress={onPress}><Text style={styles.secondaryText}>{title}</Text></TouchableOpacity>; }
-
-const styles = StyleSheet.create({
-  login: { flex: 1, backgroundColor: '#111' }, light: { flex: 1, backgroundColor: '#f3f3f3' }, loginContent: { flexGrow: 1, justifyContent: 'center', padding: 24 },
-  circle: { width: 94, height: 94, borderRadius: 47, backgroundColor: '#f5a400', alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: 18 }, circleText: { fontSize: 42 },
-  logo: { fontSize: 34, fontWeight: '900', color: '#fff', textAlign: 'center' }, subtitle: { fontSize: 18, color: '#ccc', textAlign: 'center', marginBottom: 22 },
-  api: { backgroundColor: '#1f1f1f', borderRadius: 14, padding: 12, marginBottom: 14 }, apiText: { color: '#ddd', textAlign: 'center', fontWeight: '700' },
-  input: { backgroundColor: '#fff', padding: 16, borderRadius: 14, marginBottom: 14, fontSize: 16, color: '#111' }, inputLight: { backgroundColor: '#f2f2f2', padding: 16, borderRadius: 14, marginTop: 14, fontSize: 16, color: '#111' },
-  loginButton: { backgroundColor: '#f5a400', padding: 16, borderRadius: 14, marginTop: 4 }, loginText: { color: '#111', fontWeight: '900', textAlign: 'center', fontSize: 16 }, hint: { marginTop: 16, color: '#aaa', fontSize: 13, textAlign: 'center', lineHeight: 19 },
-  header: { backgroundColor: '#111', padding: 18, paddingTop: 24, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, headerTitle: { color: '#fff', fontSize: 23, fontWeight: '900' }, headerSub: { color: '#ccc', fontSize: 14 }, headerButton: { backgroundColor: '#f5a400', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12 }, headerButtonText: { color: '#111', fontWeight: '900' },
-  warn: { backgroundColor: '#fff3cd', padding: 12 }, warnText: { color: '#6b4f00', fontWeight: '700', textAlign: 'center' }, stats: { flexDirection: 'row', padding: 16, gap: 10 }, stat: { flex: 1, backgroundColor: '#fff', borderRadius: 16, padding: 14, alignItems: 'center' }, statValue: { fontSize: 22, fontWeight: '900', color: '#111' }, statTitle: { color: '#666', fontWeight: '800' },
-  active: { marginHorizontal: 16, backgroundColor: '#128c4a', padding: 14, borderRadius: 16 }, activeText: { color: '#fff', textAlign: 'center', fontWeight: '900' },
-  card: { backgroundColor: '#fff', borderRadius: 18, padding: 16, margin: 16, marginBottom: 0, borderWidth: 1, borderColor: '#e0e0e0' }, row: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 }, orderTitle: { fontSize: 21, fontWeight: '900', color: '#111' }, small: { color: '#777', marginTop: 2, fontWeight: '700' }, fee: { backgroundColor: '#d1f7dc', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999 }, feeText: { color: '#137333', fontWeight: '900' },
-  divider: { height: 1, backgroundColor: '#eee', marginVertical: 12 }, label: { fontSize: 13, fontWeight: '900', color: '#555' }, text: { fontSize: 15, color: '#222', marginTop: 2 }, total: { marginTop: 14, fontSize: 20, fontWeight: '900', color: '#111' }, actions: { marginTop: 14, gap: 10 },
-  button: { backgroundColor: '#111', padding: 15, borderRadius: 14 }, green: { backgroundColor: '#128c4a' }, red: { backgroundColor: '#c0392b' }, buttonText: { color: '#fff', textAlign: 'center', fontWeight: '900', fontSize: 15 }, secondary: { backgroundColor: '#eee', padding: 14, borderRadius: 14 }, secondaryText: { color: '#111', textAlign: 'center', fontWeight: '900', fontSize: 14 },
-  photo: { width: '100%', height: 220, borderRadius: 16, marginTop: 14, backgroundColor: '#ddd' }, empty: { marginTop: 70, alignItems: 'center' }
+const st=StyleSheet.create({
+app:{flex:1,backgroundColor:BG},login:{flex:1,backgroundColor:BG},loginContent:{flexGrow:1,justifyContent:'center',padding:22},logo:{width:92,height:92,borderRadius:46,backgroundColor:Y,alignItems:'center',justifyContent:'center',alignSelf:'center',marginBottom:22},title:{color:T,fontSize:29,fontWeight:'900',textAlign:'center'},subtitle:{color:M,textAlign:'center',fontSize:16,fontWeight:'700',marginBottom:26},input:{backgroundColor:P2,color:T,borderRadius:9,padding:16,fontSize:15,marginBottom:12,borderWidth:1,borderColor:'#333'},yellow:{color:Y,fontWeight:'900'},btn:{backgroundColor:Y,borderRadius:9,padding:16,alignItems:'center',marginTop:14},btnText:{color:'#111',fontWeight:'900'},or:{color:M,textAlign:'center',marginVertical:18},outline:{borderColor:Y,borderWidth:1,borderRadius:9,padding:16,alignItems:'center'},terms:{color:M,textAlign:'center',fontSize:12,marginTop:24,lineHeight:19},api:{color:M,textAlign:'center',marginTop:18},white:{color:T,fontWeight:'900'},homeTop:{position:'absolute',top:30,left:0,right:0,zIndex:5,flexDirection:'row',alignItems:'center',justifyContent:'space-between',paddingHorizontal:18},menu:{width:58,height:58,borderRadius:22,backgroundColor:'rgba(30,30,34,.95)',alignItems:'center',justifyContent:'center'},menuT:{color:T,fontSize:30},redDot:{position:'absolute',top:8,right:8,width:13,height:13,borderRadius:7,backgroundColor:'#FF2C5F'},pill:{backgroundColor:'#241F4D',borderRadius:18,paddingHorizontal:23,paddingVertical:14},pillT:{color:T,fontSize:23,fontWeight:'900'},map:{flex:1,backgroundColor:'#101A26',overflow:'hidden'},heat:{position:'absolute',width:170,height:115,borderRadius:75,backgroundColor:'rgba(255,208,0,.2)'},mapText:{position:'absolute',color:'rgba(255,255,255,.55)',fontSize:25,fontWeight:'900',letterSpacing:4},marker:{position:'absolute',width:54,height:54,borderRadius:27,backgroundColor:'rgba(22,22,24,.9)',alignItems:'center',justifyContent:'center'},me:{position:'absolute',left:'52%',top:'55%',width:32,height:32,borderRadius:16,backgroundColor:'#3478F6',borderWidth:3,borderColor:T,alignItems:'center',justifyContent:'center'},online:{position:'absolute',bottom:70,left:8,right:8,backgroundColor:'rgba(24,24,26,.98)',borderTopLeftRadius:24,borderTopRightRadius:24,padding:24,alignItems:'center'},sheetTitle:{color:T,fontSize:25,fontWeight:'900'},sub:{color:M,fontWeight:'700'},panelFloat:{position:'absolute',top:112,left:14,right:14,backgroundColor:'rgba(22,22,25,.96)',borderRadius:22,padding:16},row:{flexDirection:'row',justifyContent:'space-between',alignItems:'center'},panelTitle:{color:T,fontSize:18,fontWeight:'900'},grid:{flexDirection:'row',flexWrap:'wrap',marginTop:14},stat:{width:'50%',padding:13,borderColor:'#2c2c31',borderRightWidth:1,borderBottomWidth:1},statV:{color:T,fontSize:21,fontWeight:'900',textAlign:'center'},list:{paddingTop:410,paddingHorizontal:10,paddingBottom:95},card:{backgroundColor:'rgba(20,20,23,.98)',borderRadius:20,padding:16,marginBottom:14,borderWidth:1,borderColor:'#333'},cardTop:{flexDirection:'row',justifyContent:'space-between',borderBottomWidth:1,borderBottomColor:'#333',paddingBottom:12},cardTitle:{color:T,fontWeight:'900'},close:{color:M,fontSize:24},route:{flexDirection:'row',gap:12,marginTop:16},pin:{fontSize:18},place:{color:T,fontSize:17,fontWeight:'900'},dist:{color:Y,fontWeight:'900'},box:{backgroundColor:P2,borderRadius:12,padding:14,marginTop:18},price:{backgroundColor:P2,borderRadius:12,padding:14,marginTop:10,flexDirection:'row',justifyContent:'space-between'},green:{color:G,fontWeight:'800'},big:{color:T,fontSize:26,fontWeight:'900'},tip:{color:'#BFB7FF',backgroundColor:'#201D35',padding:12,borderRadius:12,marginTop:10,fontSize:12},actionsRow:{flexDirection:'row',gap:10,marginTop:16},reject:{flex:.38,backgroundColor:P2,borderRadius:10,alignItems:'center',justifyContent:'center'},accept:{flex:.62,backgroundColor:Y,borderRadius:10,alignItems:'center',justifyContent:'center',padding:15,flexDirection:'row',gap:12},acceptText:{color:'#111',fontWeight:'900'},circle:{width:32,height:32,borderRadius:16,borderWidth:2,borderColor:T,alignItems:'center',justifyContent:'center'},circleText:{color:'#111',fontWeight:'900'},top:{height:68,backgroundColor:BG,flexDirection:'row',alignItems:'center',justifyContent:'space-between',paddingHorizontal:18},topI:{color:T,fontSize:28},topT:{color:T,fontWeight:'900'},steps:{backgroundColor:BG,flexDirection:'row',justifyContent:'space-around',paddingBottom:12,borderBottomWidth:1,borderBottomColor:'#333'},step:{alignItems:'center',flex:1},stepDot:{width:32,height:32,borderRadius:16,backgroundColor:P2,alignItems:'center',justifyContent:'center'},stepText:{color:M,fontWeight:'800',fontSize:12,marginTop:4},sheet:{position:'absolute',left:0,right:0,bottom:0,backgroundColor:'rgba(20,20,23,.98)',borderTopLeftRadius:22,borderTopRightRadius:22,padding:18,maxHeight:'62%'},dark:{backgroundColor:P2,borderRadius:10,padding:15,alignItems:'center',marginTop:10},codeTitle:{color:T,fontSize:17,fontWeight:'900',textAlign:'center',marginTop:8},codeBox:{flexDirection:'row',justifyContent:'center',gap:12,backgroundColor:P2,padding:13,borderRadius:12,marginTop:8},num:{color:Y,fontSize:36,fontWeight:'900',backgroundColor:'#2b2b31',paddingHorizontal:12,borderRadius:8},photo:{height:150,borderRadius:12,marginTop:10},backdrop:{flex:1,backgroundColor:'rgba(0,0,0,.45)'},drawer:{width:'82%',height:'100%',backgroundColor:'rgba(31,31,34,.98)',paddingTop:48,paddingHorizontal:22},profile:{flexDirection:'row',alignItems:'center',gap:14,marginBottom:28},avatar:{width:72,height:72,borderRadius:36,backgroundColor:Y,alignItems:'center',justifyContent:'center'},drawerName:{color:T,fontSize:24,fontWeight:'900'},level:{color:T,backgroundColor:'#6546D7',paddingHorizontal:10,paddingVertical:5,borderRadius:999,marginTop:8,overflow:'hidden',fontSize:12},drawerItem:{flexDirection:'row',alignItems:'center',paddingVertical:13,gap:14},drawerIcon:{fontSize:20,width:28},drawerText:{color:T,fontSize:17,fontWeight:'800'},logout:{color:R,fontSize:16,fontWeight:'900',marginTop:22,borderTopWidth:1,borderTopColor:'#333',paddingTop:22},nav:{position:'absolute',left:0,right:0,bottom:0,height:66,backgroundColor:'rgba(16,16,18,.98)',flexDirection:'row',justifyContent:'space-around',alignItems:'center',borderTopWidth:1,borderTopColor:'#333'},navT:{color:M,textAlign:'center',fontSize:11,fontWeight:'800'},navA:{color:Y,textAlign:'center',fontSize:11,fontWeight:'900'},center:{color:M,textAlign:'center',fontWeight:'800'},earn:{color:T,fontWeight:'900',fontSize:34,textAlign:'center',marginVertical:18},panel:{backgroundColor:P,borderRadius:18,padding:16,marginBottom:14,borderWidth:1,borderColor:'#333'},line:{flexDirection:'row',justifyContent:'space-between',paddingVertical:12,borderBottomWidth:1,borderBottomColor:'#333'}
 });
